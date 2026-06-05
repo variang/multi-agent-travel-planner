@@ -1,5 +1,6 @@
 """Coordinator agent and async wrapper tools that route to sub-agents."""
 
+import uuid
 from typing import Any, Optional
 
 from google.adk.agents import Agent
@@ -28,6 +29,10 @@ MODEL = "gemini-2.5-flash"
 
 async def _run_sub_agent(agent_instance: Agent, user_input: str, tool_context: Any) -> str:
     """Runs a sub-agent and returns its final text response."""
+    sub_session_id = f"sub_{uuid.uuid4().hex}"
+    await common_session_service.create_session(
+        app_name=APP_NAME, user_id=USER_ID, session_id=sub_session_id
+    )
     sub_runner = Runner(
         agent=agent_instance,
         app_name=APP_NAME,
@@ -36,7 +41,7 @@ async def _run_sub_agent(agent_instance: Agent, user_input: str, tool_context: A
     )
     sub_content = types.Content(role="user", parts=[types.Part(text=user_input)])
     final_response = ""
-    for event in sub_runner.run(user_id=USER_ID, session_id=SESSION_ID, new_message=sub_content):
+    for event in sub_runner.run(user_id=USER_ID, session_id=sub_session_id, new_message=sub_content):
         if hasattr(event, "content") and event.content and hasattr(event.content, "parts"):
             if event.is_final_response():
                 parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
