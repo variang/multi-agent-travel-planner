@@ -1,4 +1,4 @@
-"""Entry point — runs example queries against the WanderWise coordinator agent."""
+"""Entry point for interactive WanderWise CLI usage."""
 
 import asyncio
 import os
@@ -34,22 +34,18 @@ async def run_query(
     initial_state: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Runs a single user query through the coordinator agent."""
-    try:
-        await common_session_service.get_session(
-            app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID
-        )
-        if initial_state:
-            session = await common_session_service.get_session(
-                app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID
-            )
-            session.state.update(initial_state)
-    except Exception:
+    session = await common_session_service.get_session(
+        app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID
+    )
+    if session is None:
         await common_session_service.create_session(
             app_name=APP_NAME,
             user_id=USER_ID,
             session_id=SESSION_ID,
             state=initial_state or {},
         )
+    elif initial_state:
+        session.state.update(initial_state)
 
     runner = Runner(
         agent=wanderwise_coordinator_agent,
@@ -70,30 +66,22 @@ async def run_query(
 
 
 async def main() -> None:
-    test_cases = [
-        {
-            "label": "Full trip planning (Milan)",
-            "input": "I will be in Milan for 3 days this weekend. I love fashion and food. What should I pack? What events are happening? What's the weather?",
-            "state": {"user_preference_temperature_unit": "metric"},
-        },
-        {
-            "label": "Current weather only (Tokyo)",
-            "input": "What's the current weather in Tokyo?",
-            "state": None,
-        },
-        {
-            "label": "Events + packing tips (Munich)",
-            "input": "Munich, last week of July, beer and music. Any events? Packing must-haves?",
-            "state": None,
-        },
-    ]
+    """Runs an interactive prompt loop for travel planning queries."""
+    print("WanderWise Interactive CLI")
+    print("Type your travel request and press Enter.")
+    print("Type 'exit' or 'quit' to stop.")
 
-    for case in test_cases:
-        print(f"\n{'='*60}")
-        print(f"Query: {case['label']}")
-        print(f"Input: {case['input']}")
-        print("=" * 60)
-        response = await run_query(case["input"], case["state"])
+    while True:
+        user_input = input("\nTravel request> ").strip()
+        if not user_input:
+            print("Please enter a request, or type 'exit' to quit.")
+            continue
+        if user_input.lower() in {"exit", "quit"}:
+            print("Goodbye.")
+            break
+
+        print("\n" + "=" * 60)
+        response = await run_query(user_input)
         print(response)
 
 

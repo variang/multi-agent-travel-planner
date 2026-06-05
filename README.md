@@ -119,7 +119,13 @@ gcloud auth application-default login
 python main.py
 ```
 
-This runs a set of example queries against the coordinator agent and prints the results to the terminal. You can edit `main.py` to supply your own destination, duration, and interests.
+This starts an interactive CLI. Type your travel request and press Enter. Type `exit` or `quit` to stop.
+
+To run the canned evaluation test cases:
+
+```bash
+python eval_test.py
+```
 
 ### Example queries
 
@@ -145,7 +151,8 @@ multi-agent-travel-planner/
 │   ├── __init__.py
 │   └── weather_tools.py         # Custom OpenWeatherMap tool functions
 ├── coordinator.py               # Coordinator agent + wrapper tools
-├── main.py                      # Entry point with example queries
+├── main.py                      # Interactive CLI entry point
+├── eval_test.py                 # Canned evaluation test cases
 ├── requirements.txt
 ├── .env.example
 └── README.md
