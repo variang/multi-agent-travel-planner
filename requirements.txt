@@ -1,0 +1,4 @@
+google-adk>=2.1.0
+python-dotenv
+requests
+python-dateutil
