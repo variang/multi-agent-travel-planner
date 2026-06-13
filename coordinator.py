@@ -1,6 +1,7 @@
 """Coordinator agent and async wrapper tools that route to sub-agents."""
 
 import uuid
+from contextvars import ContextVar
 from typing import Any, Optional
 
 from google.adk.agents import Agent
@@ -16,10 +17,14 @@ from agents import (
     personalized_itinerary_agent,
     weather_agent,
 )
+from tracing_utils import get_langfuse_client, trace_agent_call, trace_orchestration_step
 
 APP_NAME = "wanderwise"
 USER_ID = "default_user"
 SESSION_ID = "default_session"
+
+# Context variable for passing trace_id through async calls
+_trace_id_context: ContextVar[Optional[str]] = ContextVar("trace_id", default=None)
 
 common_session_service = InMemorySessionService()
 common_memory_service = InMemoryMemoryService()
@@ -64,7 +69,21 @@ async def call_itinerary_agent(
     prompt = f"Plan a {duration} trip to {destination}"
     if interests:
         prompt += f" with interests in {interests}."
-    return await _run_sub_agent(itinerary_agent, prompt, tool_context)
+    
+    result = await _run_sub_agent(itinerary_agent, prompt, tool_context)
+    
+    # Trace the agent call
+    trace_id = _trace_id_context.get()
+    if trace_id:
+        trace_agent_call(
+            trace_id=trace_id,
+            agent_name="itinerary_agent",
+            agent_type="itinerary",
+            input_text=prompt,
+            output=result[:500] if len(result) > 500 else result,  # Limit output for readability
+        )
+    
+    return result
 
 
 async def call_latest_events_agent(destination: str, timeframe: str, tool_context=None) -> str:
@@ -76,11 +95,21 @@ async def call_latest_events_agent(destination: str, timeframe: str, tool_contex
         A summary of found events in Markdown format.
     """
     print(f"--- Coordinator → latest_events_agent ({destination}, {timeframe}) ---")
-    return await _run_sub_agent(
-        latest_events_agent,
-        f"What events are happening in {destination} in {timeframe}?",
-        tool_context,
-    )
+    prompt = f"What events are happening in {destination} in {timeframe}?"
+    result = await _run_sub_agent(latest_events_agent, prompt, tool_context)
+    
+    # Trace the agent call
+    trace_id = _trace_id_context.get()
+    if trace_id:
+        trace_agent_call(
+            trace_id=trace_id,
+            agent_name="latest_events_agent",
+            agent_type="events",
+            input_text=prompt,
+            output=result[:500] if len(result) > 500 else result,
+        )
+    
+    return result
 
 
 async def call_weather_agent_current(city: str, tool_context=None) -> str:
@@ -91,7 +120,21 @@ async def call_weather_agent_current(city: str, tool_context=None) -> str:
         A report on the current weather.
     """
     print(f"--- Coordinator → weather_agent current ({city}) ---")
-    return await _run_sub_agent(weather_agent, f"What's the current weather in {city}?", tool_context)
+    prompt = f"What's the current weather in {city}?"
+    result = await _run_sub_agent(weather_agent, prompt, tool_context)
+    
+    # Trace the agent call
+    trace_id = _trace_id_context.get()
+    if trace_id:
+        trace_agent_call(
+            trace_id=trace_id,
+            agent_name="weather_agent",
+            agent_type="weather",
+            input_text=prompt,
+            output=result[:500] if len(result) > 500 else result,
+        )
+    
+    return result
 
 
 async def call_weather_agent_forecast(city: str, date_expr: str, tool_context=None) -> str:
@@ -103,11 +146,21 @@ async def call_weather_agent_forecast(city: str, date_expr: str, tool_context=No
         A summary of the weather forecast.
     """
     print(f"--- Coordinator → weather_agent forecast ({city}, {date_expr}) ---")
-    return await _run_sub_agent(
-        weather_agent,
-        f"What's the weather forecast for {city} on {date_expr}?",
-        tool_context,
-    )
+    prompt = f"What's the weather forecast for {city} on {date_expr}?"
+    result = await _run_sub_agent(weather_agent, prompt, tool_context)
+    
+    # Trace the agent call
+    trace_id = _trace_id_context.get()
+    if trace_id:
+        trace_agent_call(
+            trace_id=trace_id,
+            agent_name="weather_agent",
+            agent_type="weather",
+            input_text=prompt,
+            output=result[:500] if len(result) > 500 else result,
+        )
+    
+    return result
 
 
 async def call_personalized_itinerary_agent(
@@ -122,7 +175,20 @@ async def call_personalized_itinerary_agent(
     """
     print("--- Coordinator → personalized_itinerary_agent ---")
     prompt = f"Input Itinerary:\n{itinerary}\n\nInput Latest Events:\n{latest_events}"
-    return await _run_sub_agent(personalized_itinerary_agent, prompt, tool_context)
+    result = await _run_sub_agent(personalized_itinerary_agent, prompt, tool_context)
+    
+    # Trace the agent call
+    trace_id = _trace_id_context.get()
+    if trace_id:
+        trace_agent_call(
+            trace_id=trace_id,
+            agent_name="personalized_itinerary_agent",
+            agent_type="personalizer",
+            input_text=prompt[:300] + "..." if len(prompt) > 300 else prompt,
+            output=result[:500] if len(result) > 500 else result,
+        )
+    
+    return result
 
 
 async def call_packing_list_agent(
@@ -137,7 +203,20 @@ async def call_packing_list_agent(
     """
     print("--- Coordinator → packing_list_agent ---")
     prompt = f"Input Personalized Itinerary:\n{personalized_itinerary}\n\nInput Weather Summary:\n{weather}"
-    return await _run_sub_agent(packing_list_agent, prompt, tool_context)
+    result = await _run_sub_agent(packing_list_agent, prompt, tool_context)
+    
+    # Trace the agent call
+    trace_id = _trace_id_context.get()
+    if trace_id:
+        trace_agent_call(
+            trace_id=trace_id,
+            agent_name="packing_list_agent",
+            agent_type="packing",
+            input_text=prompt[:300] + "..." if len(prompt) > 300 else prompt,
+            output=result[:500] if len(result) > 500 else result,
+        )
+    
+    return result
 
 
 wanderwise_coordinator_agent = Agent(

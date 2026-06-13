@@ -23,10 +23,12 @@ from coordinator import (  # noqa: E402  (import after env validation)
     APP_NAME,
     SESSION_ID,
     USER_ID,
+    _trace_id_context,
     common_memory_service,
     common_session_service,
     wanderwise_coordinator_agent,
 )
+from tracing_utils import flush_traces, get_langfuse_client, is_tracing_enabled  # noqa: E402
 
 
 async def run_query(
@@ -34,35 +36,55 @@ async def run_query(
     initial_state: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Runs a single user query through the coordinator agent."""
-    session = await common_session_service.get_session(
-        app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID
-    )
-    if session is None:
-        await common_session_service.create_session(
-            app_name=APP_NAME,
+    # Initialize Langfuse trace for this query (no-op when tracing is disabled)
+    trace = None
+    if is_tracing_enabled():
+        langfuse = get_langfuse_client()
+        trace = langfuse.trace(
+            name="wanderwise-travel-request",
             user_id=USER_ID,
             session_id=SESSION_ID,
-            state=initial_state or {},
+            input={"query": input_text},
+            tags=["cli", "interactive"],
         )
-    elif initial_state:
-        session.state.update(initial_state)
+        _trace_id_context.set(trace.id)
+    
+    try:
+        session = await common_session_service.get_session(
+            app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID
+        )
+        if session is None:
+            await common_session_service.create_session(
+                app_name=APP_NAME,
+                user_id=USER_ID,
+                session_id=SESSION_ID,
+                state=initial_state or {},
+            )
+        elif initial_state:
+            session.state.update(initial_state)
 
-    runner = Runner(
-        agent=wanderwise_coordinator_agent,
-        app_name=APP_NAME,
-        session_service=common_session_service,
-        memory_service=common_memory_service,
-    )
+        runner = Runner(
+            agent=wanderwise_coordinator_agent,
+            app_name=APP_NAME,
+            session_service=common_session_service,
+            memory_service=common_memory_service,
+        )
 
-    content = types.Content(role="user", parts=[types.Part(text=input_text)])
-    final_response = ""
-    for event in runner.run(user_id=USER_ID, session_id=SESSION_ID, new_message=content):
-        if hasattr(event, "content") and event.content and hasattr(event.content, "parts"):
-            text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
-            if text_parts:
-                final_response = "\n".join(text_parts)
+        content = types.Content(role="user", parts=[types.Part(text=input_text)])
+        final_response = ""
+        for event in runner.run(user_id=USER_ID, session_id=SESSION_ID, new_message=content):
+            if hasattr(event, "content") and event.content and hasattr(event.content, "parts"):
+                text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
+                if text_parts:
+                    final_response = "\n".join(text_parts)
 
-    return final_response or "No response from agent."
+        # Update trace with final response
+        if trace is not None:
+            trace.update(output=final_response[:1000] if len(final_response) > 1000 else final_response)
+        return final_response or "No response from agent."
+    
+    finally:
+        _trace_id_context.set(None)
 
 
 async def main() -> None:
@@ -71,18 +93,23 @@ async def main() -> None:
     print("Type your travel request and press Enter.")
     print("Type 'exit' or 'quit' to stop.")
 
-    while True:
-        user_input = input("\nTravel request> ").strip()
-        if not user_input:
-            print("Please enter a request, or type 'exit' to quit.")
-            continue
-        if user_input.lower() in {"exit", "quit"}:
-            print("Goodbye.")
-            break
+    try:
+        while True:
+            user_input = input("\nTravel request> ").strip()
+            if not user_input:
+                print("Please enter a request, or type 'exit' to quit.")
+                continue
+            if user_input.lower() in {"exit", "quit"}:
+                print("Goodbye.")
+                break
 
-        print("\n" + "=" * 60)
-        response = await run_query(user_input)
-        print(response)
+            print("\n" + "=" * 60)
+            response = await run_query(user_input)
+            print(response)
+    finally:
+        # Flush all traces to Langfuse before exit
+        flush_traces()
+        print("\nTraces sent to Langfuse.")
 
 
 if __name__ == "__main__":

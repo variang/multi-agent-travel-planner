@@ -2,7 +2,12 @@
 
 import asyncio
 
-from main import run_query
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from main import run_query  # noqa: E402
+from tracing_utils import flush_traces, is_tracing_enabled  # noqa: E402
 
 
 async def main() -> None:
@@ -35,3 +40,6 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
+    if is_tracing_enabled():
+        flush_traces()
+        print("\nTraces sent to Langfuse.")
