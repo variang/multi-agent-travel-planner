@@ -63,8 +63,9 @@ def get_langfuse_client():
 
 def flush_traces() -> None:
     """Flush all pending traces to Langfuse. No-op when tracing is disabled."""
-    if langfuse_client is not None:
-        langfuse_client.flush()
+    client = get_langfuse_client()
+    if client is not None:
+        client.flush()
 
 
 def trace_coordinator_flow(
@@ -74,9 +75,10 @@ def trace_coordinator_flow(
     session_id: str = "default_session",
 ) -> dict[str, str]:
     """Create a root trace for the entire coordinate flow. No-op when tracing is disabled."""
-    if langfuse_client is None:
+    client = get_langfuse_client()
+    if client is None:
         return {"trace_id": None, "trace": None}
-    trace = langfuse_client.trace(
+    trace = client.trace(
         name="coordinator-travel-plan",
         user_id=user_id,
         session_id=session_id,
@@ -89,27 +91,53 @@ def trace_coordinator_flow(
     return {"trace_id": trace.id, "trace": trace}
 
 
+def start_agent_generation(
+    trace_id: str,
+    agent_type: str,
+    input_text: str,
+    model: str,
+):
+    """Start a generation observation BEFORE the agent runs.
+
+    Returns the generation object (or None when tracing is disabled).
+    Pass the returned object to end_agent_generation() after the agent finishes.
+    This two-phase approach captures real wall-clock latency.
+    """
+    client = get_langfuse_client()
+    if client is None:
+        return None
+    return client.generation(
+        name=f"call-{agent_type}-agent",
+        trace_id=trace_id,
+        input=input_text,
+        model=model,
+        tags=[agent_type, "sub-agent"],
+    )
+
+
+def end_agent_generation(generation, output: str) -> None:
+    """End a generation observation AFTER the agent finishes, recording the output."""
+    if generation is None:
+        return
+    generation.end(output=output)
+
+
 def trace_agent_call(
     trace_id: str,
     agent_name: str,
     agent_type: str,
     input_text: str,
     output: str,
-    model: str = "gemini-2.5-flash",
+    model: str,
 ) -> None:
-    """Record a sub-agent call as a nested span.
-    
-    Args:
-        trace_id: Parent trace ID
-        agent_name: Display name of the agent
-        agent_type: Type of agent (e.g., "itinerary", "weather")
-        input_text: Input prompt/query to the agent
-        output: Agent's response
-        model: LLM model used
+    """Record a sub-agent call as a generation (always zero-latency).
+
+    Prefer start_agent_generation / end_agent_generation to capture real latency.
     """
-    if langfuse_client is None:
+    client = get_langfuse_client()
+    if client is None:
         return
-    span = langfuse_client.span(
+    gen = client.generation(
         name=f"call-{agent_type}-agent",
         trace_id=trace_id,
         input=input_text,
@@ -117,7 +145,7 @@ def trace_agent_call(
         model=model,
         tags=[agent_type, "sub-agent"],
     )
-    span.end()
+    gen.end()
 
 
 def trace_tool_call(
@@ -134,9 +162,10 @@ def trace_tool_call(
         tool_input: Input to the tool
         tool_output: Tool's output (summary only for large responses)
     """
-    if langfuse_client is None:
+    client = get_langfuse_client()
+    if client is None:
         return
-    span = langfuse_client.span(
+    span = client.span(
         name=f"tool-{tool_name}",
         trace_id=trace_id,
         input=tool_input,
@@ -160,9 +189,10 @@ def trace_orchestration_step(
         input_data: Input data for this step
         output_data: Output from this step
     """
-    if langfuse_client is None:
+    client = get_langfuse_client()
+    if client is None:
         return
-    span = langfuse_client.span(
+    span = client.span(
         name=f"orchestration-{step_name}",
         trace_id=trace_id,
         input=input_data,
@@ -195,7 +225,10 @@ def observe_async(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
-            trace = langfuse_client.trace(
+            client = get_langfuse_client()
+            if client is None:
+                return await func(*args, **kwargs)
+            trace = client.trace(
                 name=name,
                 input={"args": str(args), "kwargs": str(kwargs)},
                 tags=tags,
@@ -236,7 +269,10 @@ def observe_sync(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
-            trace = langfuse_client.trace(
+            client = get_langfuse_client()
+            if client is None:
+                return func(*args, **kwargs)
+            trace = client.trace(
                 name=name,
                 input={"args": str(args), "kwargs": str(kwargs)},
                 tags=tags,
