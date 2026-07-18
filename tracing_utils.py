@@ -106,20 +106,30 @@ def start_agent_generation(
     client = get_langfuse_client()
     if client is None:
         return None
-    return client.generation(
+    gen = client.generation(
         name=f"call-{agent_type}-agent",
         trace_id=trace_id,
         input=input_text,
         model=model,
         tags=[agent_type, "sub-agent"],
     )
+    gen._input_text = input_text
+    return gen
 
 
 def end_agent_generation(generation, output: str) -> None:
     """End a generation observation AFTER the agent finishes, recording the output."""
     if generation is None:
         return
-    generation.end(output=output)
+    input_text = getattr(generation, "_input_text", "")
+    generation.end(
+        output=output,
+        usage={
+            "input": len(input_text) // 4,
+            "output": len(output) // 4,
+            "unit": "TOKENS",
+        },
+    )
 
 
 def trace_agent_call(
