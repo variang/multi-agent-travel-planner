@@ -71,13 +71,13 @@ async def call_itinerary_agent(
     trace_id = _trace_id_context.get()
     gen = start_agent_generation(trace_id, "itinerary", prompt, MODEL) if trace_id else None
     result = await _run_sub_agent(itinerary_agent, prompt, tool_context)
-    end_agent_generation(gen, result[:500] if len(result) > 500 else result)
+    end_agent_generation(gen, result)
     if trace_id:
         trace_orchestration_step(
             trace_id=trace_id,
             step_name="itinerary-planning",
             input_data={"destination": destination, "duration": duration, "interests": interests},
-            output_data=result[:500] if len(result) > 500 else result,
+            output_data=result,
         )
     return result
 
@@ -95,13 +95,13 @@ async def call_latest_events_agent(destination: str, timeframe: str, tool_contex
     trace_id = _trace_id_context.get()
     gen = start_agent_generation(trace_id, "events", prompt, MODEL) if trace_id else None
     result = await _run_sub_agent(latest_events_agent, prompt, tool_context)
-    end_agent_generation(gen, result[:500] if len(result) > 500 else result)
+    end_agent_generation(gen, result)
     if trace_id:
         trace_orchestration_step(
             trace_id=trace_id,
             step_name="events-lookup",
             input_data={"destination": destination, "timeframe": timeframe},
-            output_data=result[:500] if len(result) > 500 else result,
+            output_data=result,
         )
     return result
 
@@ -118,13 +118,13 @@ async def call_weather_agent_current(city: str, tool_context=None) -> str:
     trace_id = _trace_id_context.get()
     gen = start_agent_generation(trace_id, "weather", prompt, MODEL) if trace_id else None
     result = await _run_sub_agent(weather_agent, prompt, tool_context)
-    end_agent_generation(gen, result[:500] if len(result) > 500 else result)
+    end_agent_generation(gen, result)
     if trace_id:
         trace_orchestration_step(
             trace_id=trace_id,
             step_name="weather-current",
             input_data={"city": city},
-            output_data=result[:500] if len(result) > 500 else result,
+            output_data=result,
         )
     return result
 
@@ -142,13 +142,13 @@ async def call_weather_agent_forecast(city: str, date_expr: str, tool_context=No
     trace_id = _trace_id_context.get()
     gen = start_agent_generation(trace_id, "weather", prompt, MODEL) if trace_id else None
     result = await _run_sub_agent(weather_agent, prompt, tool_context)
-    end_agent_generation(gen, result[:500] if len(result) > 500 else result)
+    end_agent_generation(gen, result)
     if trace_id:
         trace_orchestration_step(
             trace_id=trace_id,
             step_name="weather-forecast",
             input_data={"city": city, "date_expr": date_expr},
-            output_data=result[:500] if len(result) > 500 else result,
+            output_data=result,
         )
     return result
 
@@ -166,16 +166,15 @@ async def call_personalized_itinerary_agent(
     print("--- Coordinator → personalized_itinerary_agent ---")
     prompt = f"Input Itinerary:\n{itinerary}\n\nInput Latest Events:\n{latest_events}"
     trace_id = _trace_id_context.get()
-    truncated_prompt = prompt[:300] + "..." if len(prompt) > 300 else prompt
-    gen = start_agent_generation(trace_id, "personalizer", truncated_prompt, MODEL) if trace_id else None
+    gen = start_agent_generation(trace_id, "personalizer", prompt, MODEL) if trace_id else None
     result = await _run_sub_agent(personalized_itinerary_agent, prompt, tool_context)
-    end_agent_generation(gen, result[:500] if len(result) > 500 else result)
+    end_agent_generation(gen, result)
     if trace_id:
         trace_orchestration_step(
             trace_id=trace_id,
             step_name="itinerary-personalization",
-            input_data=truncated_prompt,
-            output_data=result[:500] if len(result) > 500 else result,
+            input_data=prompt,
+            output_data=result,
         )
     return result
 
@@ -193,19 +192,18 @@ async def call_packing_list_agent(
     print("--- Coordinator → packing_list_agent ---")
     prompt = f"Input Personalized Itinerary:\n{personalized_itinerary}\n\nInput Weather Summary:\n{weather}"
     trace_id = _trace_id_context.get()
-    truncated_prompt = prompt[:300] + "..." if len(prompt) > 300 else prompt
-    gen = start_agent_generation(trace_id, "packing", truncated_prompt, MODEL) if trace_id else None
+    gen = start_agent_generation(trace_id, "packing", prompt, MODEL) if trace_id else None
     result = await _run_sub_agent(packing_list_agent, prompt, tool_context)
-    end_agent_generation(gen, result[:500] if len(result) > 500 else result)
+    end_agent_generation(gen, result)
     if trace_id:
         trace_orchestration_step(
             trace_id=trace_id,
             step_name="assemble-travel-plan",
             input_data={
-                "personalized_itinerary": personalized_itinerary[:300] + "..." if len(personalized_itinerary) > 300 else personalized_itinerary,
-                "weather": weather[:300] + "..." if len(weather) > 300 else weather,
+                "personalized_itinerary": personalized_itinerary,
+                "weather": weather,
             },
-            output_data=result[:500] if len(result) > 500 else result,
+            output_data=result,
         )
     return result
 
