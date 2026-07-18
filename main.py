@@ -10,7 +10,6 @@ from google.genai import types
 
 load_dotenv()
 
-# Validate required env vars before importing agents (which configure the LLM backend)
 _required = ["OPEN_WEATHER_API_KEY"]
 for _var in _required:
     if not os.environ.get(_var):
@@ -23,7 +22,7 @@ from coordinator import (  # noqa: E402  (import after env validation)
     APP_NAME,
     SESSION_ID,
     USER_ID,
-    _trace_id_context,
+    set_trace_id,
     common_memory_service,
     common_session_service,
     wanderwise_coordinator_agent,
@@ -36,7 +35,7 @@ async def run_query(
     initial_state: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Runs a single user query through the coordinator agent."""
-    # Initialize Langfuse trace for this query (no-op when tracing is disabled)
+
     trace = None
     if is_tracing_enabled():
         langfuse = get_langfuse_client()
@@ -47,7 +46,7 @@ async def run_query(
             input={"query": input_text},
             tags=["cli", "interactive"],
         )
-        _trace_id_context.set(trace.id)
+        set_trace_id(trace.id)
     
     try:
         session = await common_session_service.get_session(
@@ -78,13 +77,12 @@ async def run_query(
                 if text_parts:
                     final_response = "\n".join(text_parts)
 
-        # Update trace with final response
         if trace is not None:
-            trace.update(output=final_response[:1000] if len(final_response) > 1000 else final_response)
+            trace.update(output=final_response)
         return final_response or "No response from agent."
     
     finally:
-        _trace_id_context.set(None)
+        set_trace_id(None)
 
 
 async def main() -> None:
