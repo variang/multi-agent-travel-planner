@@ -35,8 +35,16 @@ common_memory_service = InMemoryMemoryService()
 MODEL = "gemini-2.5-flash"
 
 
-async def _run_sub_agent(agent_instance: Agent, user_input: str, tool_context: Any) -> str:
+async def _run_sub_agent(
+    agent_instance: Agent,
+    user_input: str,
+    agent_type: str = "",
+    step_name: str = "",
+    step_input: Any = None,
+) -> str:
     """Runs a sub-agent and returns its final text response."""
+    trace_id = _current_trace_id
+    gen = start_agent_generation(trace_id, agent_type, user_input, MODEL) if (trace_id and agent_type) else None
     sub_session_id = f"sub_{uuid.uuid4().hex}"
     await common_session_service.create_session(
         app_name=APP_NAME, user_id=USER_ID, session_id=sub_session_id
@@ -54,11 +62,23 @@ async def _run_sub_agent(agent_instance: Agent, user_input: str, tool_context: A
             if event.is_final_response():
                 parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
                 final_response = "\n".join(parts)
-    return final_response or "No response from agent."
+    final_response = final_response or "No response from agent."
+    end_agent_generation(gen, final_response)
+    if trace_id and step_name:
+        trace_orchestration_step(
+            trace_id=trace_id,
+            step_name=step_name,
+            input_data={
+                **(step_input if isinstance(step_input, dict) else {"input": step_input or user_input}),
+                "sub_session_id": sub_session_id,
+            },
+            output_data=final_response,
+        )
+    return final_response
 
 
 async def call_itinerary_agent(
-    destination: str, duration: str, interests: Optional[str] = None, tool_context=None
+    destination: str, duration: str, interests: Optional[str] = None
 ) -> str:
     """Plans a detailed travel itinerary for a given destination, duration, and interests.
     Args:
@@ -72,21 +92,15 @@ async def call_itinerary_agent(
     prompt = f"Plan a {duration} trip to {destination}"
     if interests:
         prompt += f" with interests in {interests}."
-    trace_id = _current_trace_id
-    gen = start_agent_generation(trace_id, "itinerary", prompt, MODEL) if trace_id else None
-    result = await _run_sub_agent(itinerary_agent, prompt, tool_context)
-    end_agent_generation(gen, result)
-    if trace_id:
-        trace_orchestration_step(
-            trace_id=trace_id,
-            step_name="itinerary-planning",
-            input_data={"destination": destination, "duration": duration, "interests": interests},
-            output_data=result,
-        )
-    return result
+    return await _run_sub_agent(
+        itinerary_agent, prompt,
+        agent_type="itinerary",
+        step_name="itinerary-planning",
+        step_input={"destination": destination, "duration": duration, "interests": interests},
+    )
 
 
-async def call_latest_events_agent(destination: str, timeframe: str, tool_context=None) -> str:
+async def call_latest_events_agent(destination: str, timeframe: str) -> str:
     """Finds current or upcoming events, festivals, or activities for a given destination and timeframe.
     Args:
         destination: The travel destination (e.g., "Paris").
@@ -96,21 +110,15 @@ async def call_latest_events_agent(destination: str, timeframe: str, tool_contex
     """
     print(f"--- Coordinator → latest_events_agent ({destination}, {timeframe}) ---")
     prompt = f"What events are happening in {destination} in {timeframe}?"
-    trace_id = _current_trace_id
-    gen = start_agent_generation(trace_id, "events", prompt, MODEL) if trace_id else None
-    result = await _run_sub_agent(latest_events_agent, prompt, tool_context)
-    end_agent_generation(gen, result)
-    if trace_id:
-        trace_orchestration_step(
-            trace_id=trace_id,
-            step_name="events-lookup",
-            input_data={"destination": destination, "timeframe": timeframe},
-            output_data=result,
-        )
-    return result
+    return await _run_sub_agent(
+        latest_events_agent, prompt,
+        agent_type="events",
+        step_name="events-lookup",
+        step_input={"destination": destination, "timeframe": timeframe},
+    )
 
 
-async def call_weather_agent_current(city: str, tool_context=None) -> str:
+async def call_weather_agent_current(city: str) -> str:
     """Retrieves current weather data for a given city.
     Args:
         city: The city for which to get current weather.
@@ -119,21 +127,15 @@ async def call_weather_agent_current(city: str, tool_context=None) -> str:
     """
     print(f"--- Coordinator → weather_agent current ({city}) ---")
     prompt = f"What's the current weather in {city}?"
-    trace_id = _current_trace_id
-    gen = start_agent_generation(trace_id, "weather", prompt, MODEL) if trace_id else None
-    result = await _run_sub_agent(weather_agent, prompt, tool_context)
-    end_agent_generation(gen, result)
-    if trace_id:
-        trace_orchestration_step(
-            trace_id=trace_id,
-            step_name="weather-current",
-            input_data={"city": city},
-            output_data=result,
-        )
-    return result
+    return await _run_sub_agent(
+        weather_agent, prompt,
+        agent_type="weather",
+        step_name="weather-current",
+        step_input={"city": city},
+    )
 
 
-async def call_weather_agent_forecast(city: str, date_expr: str, tool_context=None) -> str:
+async def call_weather_agent_forecast(city: str, date_expr: str) -> str:
     """Summarizes weather data for a given city and flexible date expression.
     Args:
         city: The city for which to get the forecast.
@@ -143,22 +145,16 @@ async def call_weather_agent_forecast(city: str, date_expr: str, tool_context=No
     """
     print(f"--- Coordinator → weather_agent forecast ({city}, {date_expr}) ---")
     prompt = f"What's the weather forecast for {city} on {date_expr}?"
-    trace_id = _current_trace_id
-    gen = start_agent_generation(trace_id, "weather", prompt, MODEL) if trace_id else None
-    result = await _run_sub_agent(weather_agent, prompt, tool_context)
-    end_agent_generation(gen, result)
-    if trace_id:
-        trace_orchestration_step(
-            trace_id=trace_id,
-            step_name="weather-forecast",
-            input_data={"city": city, "date_expr": date_expr},
-            output_data=result,
-        )
-    return result
+    return await _run_sub_agent(
+        weather_agent, prompt,
+        agent_type="weather",
+        step_name="weather-forecast",
+        step_input={"city": city, "date_expr": date_expr},
+    )
 
 
 async def call_personalized_itinerary_agent(
-    itinerary: str, latest_events: str, tool_context=None
+    itinerary: str, latest_events: str
 ) -> str:
     """Personalizes a travel itinerary by integrating relevant events.
     Args:
@@ -169,22 +165,15 @@ async def call_personalized_itinerary_agent(
     """
     print("--- Coordinator → personalized_itinerary_agent ---")
     prompt = f"Input Itinerary:\n{itinerary}\n\nInput Latest Events:\n{latest_events}"
-    trace_id = _current_trace_id
-    gen = start_agent_generation(trace_id, "personalizer", prompt, MODEL) if trace_id else None
-    result = await _run_sub_agent(personalized_itinerary_agent, prompt, tool_context)
-    end_agent_generation(gen, result)
-    if trace_id:
-        trace_orchestration_step(
-            trace_id=trace_id,
-            step_name="itinerary-personalization",
-            input_data=prompt,
-            output_data=result,
-        )
-    return result
+    return await _run_sub_agent(
+        personalized_itinerary_agent, prompt,
+        agent_type="personalizer",
+        step_name="itinerary-personalization",
+    )
 
 
 async def call_packing_list_agent(
-    personalized_itinerary: str, weather: str, tool_context=None
+    personalized_itinerary: str, weather: str
 ) -> str:
     """Generates a packing list based on a detailed itinerary and weather summary.
     Args:
@@ -195,21 +184,12 @@ async def call_packing_list_agent(
     """
     print("--- Coordinator → packing_list_agent ---")
     prompt = f"Input Personalized Itinerary:\n{personalized_itinerary}\n\nInput Weather Summary:\n{weather}"
-    trace_id = _current_trace_id
-    gen = start_agent_generation(trace_id, "packing", prompt, MODEL) if trace_id else None
-    result = await _run_sub_agent(packing_list_agent, prompt, tool_context)
-    end_agent_generation(gen, result)
-    if trace_id:
-        trace_orchestration_step(
-            trace_id=trace_id,
-            step_name="assemble-travel-plan",
-            input_data={
-                "personalized_itinerary": personalized_itinerary,
-                "weather": weather,
-            },
-            output_data=result,
-        )
-    return result
+    return await _run_sub_agent(
+        packing_list_agent, prompt,
+        agent_type="packing",
+        step_name="assemble-travel-plan",
+        step_input={"personalized_itinerary": personalized_itinerary, "weather": weather},
+    )
 
 
 wanderwise_coordinator_agent = Agent(
