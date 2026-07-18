@@ -113,6 +113,49 @@ gcloud auth application-default login
 
 ---
 
+## Observability with Langfuse (optional)
+
+WanderWise integrates with [Langfuse](https://langfuse.com/) for tracing agent runs. Tracing is **opt-in** — the app works fine without it.
+
+### Start a local Langfuse instance
+
+Docker is required. A `docker-compose.langfuse.yml` is included in the repo.
+
+```bash
+# 1. Start the Docker daemon (macOS with Colima)
+colima start
+
+# 2. Start Langfuse + its Postgres database
+docker compose -f docker-compose.langfuse.yml up -d
+```
+
+Langfuse will be available at <http://localhost:3000>.
+
+### Create an account and generate API keys
+
+1. Open <http://localhost:3000> and register a new account.
+2. Create an **organisation** and a **project**.
+3. Go to **Settings → API Keys** and create a new key pair.
+
+### Add the keys to your `.env`
+
+```dotenv
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_BASE_URL=http://localhost:3000
+LANGFUSE_HOST=http://localhost:3000
+```
+
+> **Note:** Keys generated on Langfuse Cloud will not work against a local instance and vice versa — always use keys from the same instance you are pointing to.
+
+### Stopping Langfuse
+
+```bash
+docker compose -f docker-compose.langfuse.yml down
+```
+
+---
+
 ## Running the Planner
 
 ```bash
@@ -151,8 +194,10 @@ multi-agent-travel-planner/
 │   ├── __init__.py
 │   └── weather_tools.py         # Custom OpenWeatherMap tool functions
 ├── coordinator.py               # Coordinator agent + wrapper tools
+├── tracing_utils.py             # Langfuse tracing helpers (optional)
 ├── main.py                      # Interactive CLI entry point
 ├── eval_test.py                 # Canned evaluation test cases
+├── docker-compose.langfuse.yml  # Local Langfuse + Postgres stack
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -167,6 +212,7 @@ multi-agent-travel-planner/
 | `requests` | HTTP calls to OpenWeatherMap |
 | `python-dateutil` | Flexible date string parsing |
 | `python-dotenv` | Load `.env` files |
+| `langfuse` | Observability & tracing (optional) |
 
 ## License
 
