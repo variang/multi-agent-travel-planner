@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import uuid
 from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
@@ -29,6 +30,8 @@ from coordinator import (  # noqa: E402  (import after env validation)
 )
 from tracing_utils import flush_traces, get_langfuse_client, is_tracing_enabled  # noqa: E402
 
+_LANGFUSE_SESSION_ID = str(uuid.uuid4())
+
 
 async def run_query(
     input_text: str,
@@ -42,7 +45,7 @@ async def run_query(
         trace = langfuse.trace(
             name="wanderwise-travel-request",
             user_id=USER_ID,
-            session_id=SESSION_ID,
+            session_id=_LANGFUSE_SESSION_ID,
             input={"query": input_text},
             tags=["cli", "interactive"],
         )
@@ -105,7 +108,6 @@ async def main() -> None:
             response = await run_query(user_input)
             print(response)
     finally:
-        # Flush all traces to Langfuse before exit
         flush_traces()
         print("\nTraces sent to Langfuse.")
 
